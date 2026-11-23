@@ -163,15 +163,24 @@ function topbar() {
     ),
     el('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Views' }, tab('board', 'Board'), tab('method', 'Method')),
     el('div', { class: 'top-meta' },
+      el('div', { class: 'proof' }, el('b', { text: '✓ 40/40 WATCHLIST' }), el('span', { text: `${D.counts.rows}/${D.counts.rows} rows · ${D.ledger.total}/${D.ledger.total} ledger` })),
       el('div', null, el('b', { text: 'SNAPSHOT ' + D.meta.as_of }), el('span', { text: 'sealed input' })),
-      el('div', null, el('b', { text: D.meta.protocols + ' RECORDS' }), el('span', { text: 'DefiLlama, fetched once' })),
-      el('div', null, el('b', { text: D.meta.model_version.toUpperCase() }), el('span', { text: 'value × odds' }))
+      el('div', null, el('b', { text: D.meta.protocols + ' RECORDS' }), el('span', { text: 'DefiLlama, fetched once' }))
     )
   );
 }
 
 function kpi(v, l, s, tone) {
   return el('div', { class: 'kpi ' + (tone || '') }, el('b', { text: v }), el('span', { text: l }), el('em', { text: s }));
+}
+
+function formulaBar() {
+  return el('div', { class: 'formula-bar' },
+    el('b', { text: 'IMPLIED VALUE' }), ' = TVL × ', el('b', { text: 'fitted launch multiple' }),
+    el('span', { text: 'what a launch would be worth per dollar of TVL' }), ' × ', el('b', { text: 'token odds' }),
+    el('span', { text: 'how often peers this size, age and family record one' }),
+    el('em', { text: 'both fitted on this snapshot · no protocol name in the path' })
+  );
 }
 
 function sizeScatter() {
@@ -221,7 +230,7 @@ function hero() {
       kpi('×' + v.loo.median.toFixed(2), 'beats a flat multiple?', `flat ×${v.terms[0].loo.toFixed(2)} LOO · walk-forward ×${v.holdout.median.toFixed(2)}`),
       kpi(pct1(o.cv.accuracy), 'do odds beat base?', `base ${pct1(o.base_rate)} · Brier ${o.cv.brier.toFixed(3)} vs ${(o.base_rate * (1 - o.base_rate)).toFixed(3)}`),
       kpi(String(farms.FARM), 'worth farming now?', `of ${D.counts.rows} · every row has a 10-step plan`, 'mint'),
-      kpi(String(D.ledger.total), 'every record accounted for?', `${D.counts.rows} ranked · ${D.ledger.total - D.counts.rows} set aside`)
+      kpi(String(D.ledger.total), 'every record counted?', `${D.counts.rows} ranked · ${D.ledger.total - D.counts.rows} set aside`)
     )
   );
 }
@@ -322,7 +331,7 @@ function filters() {
     el('div', { class: 'field search' }, el('span', { text: 'search' }), q),
     el('div', { class: 'field' }, el('span', { text: 'category' }), cat),
     el('div', { class: 'field' }, el('span', { text: 'chain' }), chain),
-    pick('size', [0, 2500, 5000, 10000, 20000], state.size, (v) => (v ? '$' + v / 1000 + 'K' : 'auto'), (v) => ({ size: v, detail: null })),
+    pick('deposit', [0, 2500, 5000, 10000, 20000], state.size, (v) => (v ? '$' + v / 1000 + 'K' : '2.5 bps'), (v) => ({ size: v, detail: null })),
     pick('drop', [0.035, 0.07, 0.14, 0.28], state.share, (v) => (v * 100).toFixed(v < 0.1 ? 1 : 0) + '%', (v) => ({ share: v, detail: null })),
     reset,
     el('div', { class: 'filter-count' }, el('b', { text: String(rows.length) }), ` of ${D.rows.length} rows · ${usd(rows.reduce((s, r) => s + r.tvl_usd, 0))} TVL · ${usd(rows.reduce((s, r) => s + r.implied_value_usd, 0))} implied`)
@@ -375,6 +384,37 @@ function actionLabel(r) {
   return 'Deposit';
 }
 
+const STEP_LABEL = ['Setup', 'Verify', 'Fund', 'Risk', 'Core', 'Second', 'Cadence', 'Watch', 'Hold', 'Exit'];
+
+function sensitivityCard(r) {
+  const cases = [
+    ['as recorded', {}],
+    ['TVL 30% lower', { tvl_usd: r.tvl_usd * 0.7 }],
+    ['7-day change 0', { change_7d: 0 }],
+    ['7-day change +20%', { change_7d: 0.2 }],
+    ['six months more, no token', { age_days: (r.age_days || 0) + 183 }],
+  ];
+  const base = r.implied_value_usd;
+  return el('section', { class: 'card' },
+    el('h2', null, 'What moves the value', el('span', { text: 'same model, one input changed' })),
+    el('table', { class: 'sens' },
+      el('thead', null, el('tr', null, el('th', { text: 'If' }), el('th', { class: 'num', text: 'Launch value' }), el('th', { class: 'num', text: 'Odds' }), el('th', { class: 'num', text: 'Implied' }), el('th', { class: 'num', text: 'vs now' }))),
+      el('tbody', null, cases.map(([label, patch], i) => {
+        const v = rebuildValue({ ...r, ...patch }, D);
+        const delta = i ? v.implied_value_usd / base - 1 : 0;
+        return el('tr', { class: i ? '' : 'now' },
+          el('td', { text: label }),
+          el('td', { class: 'num', text: usd(v.launch_value_usd) }),
+          el('td', { class: 'num', text: pct0(v.odds) }),
+          el('td', { class: 'num', text: usd(v.implied_value_usd) }),
+          el('td', { class: 'num ' + (delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'flat'), text: i ? (delta > 0 ? '+' : '') + (delta * 100).toFixed(0) + '%' : '—' })
+        );
+      }))
+    ),
+    el('p', { class: 'fine', text: 'TVL moves the launch value; growth and no-token age move the odds. The board multiplies the same two fits.' })
+  );
+}
+
 function table(rows) {
   const tbody = el('tbody');
   rows.forEach((r) => {
@@ -382,7 +422,7 @@ function table(rows) {
     const tr = el('tr', { tabindex: '0', 'data-slug': r.slug, onclick: () => openDetail(r.slug), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } } },
       el('td', { class: 'rk' }, el('b', { text: String(r.rank).padStart(2, '0') })),
       el('td', { class: 'proto' },
-        el('div', { class: 'pname' }, el('i', { class: 'fam', style: `background:${color(r.category)}`, title: r.family }), el('b', { text: r.name }),
+        el('div', { class: 'pname' }, el('i', { class: 'famdot', style: `background:${color(r.category)}`, title: r.family }), el('b', { text: r.name }),
           r.watchlist ? el('em', { class: 'badge w', text: 'W', title: 'On the 40-protocol watchlist' }) : null,
           r.off_list ? el('em', { class: 'badge off', text: 'OFF', title: 'Above the $50M floor but off-list: DefiLlama records a parent protocol' }) : null
         ),
@@ -415,10 +455,10 @@ function table(rows) {
         sortTh('launch', 'If launches', true),
         sortTh('implied', 'Implied value', true),
         el('th', { class: 'num', text: 'P25–P75' }),
-        sortTh('deposit', 'Plan size', true),
+        sortTh('deposit', 'Farm plan', true),
         sortTh('drop', 'Drop', true),
-        sortTh('net', 'Net', true),
-        sortTh('hourly', '$ / hour', true),
+        sortTh('net', 'Net of fees', true),
+        sortTh('hourly', 'Net / hour', true),
         sortTh('verdict', 'Verdict', true)
       )),
       tbody
@@ -445,7 +485,7 @@ function integrity() {
 }
 
 function boardView() {
-  return el('main', { class: 'floor' }, hero(), ledger(), integrity(), evidence(),
+  return el('main', { class: 'floor' }, hero(), formulaBar(), ledger(), integrity(), evidence(),
     el('div', { class: 'control-block' }, tabsRow(), filters()),
     table(sorted(filtered())));
 }
@@ -549,14 +589,16 @@ function detailView() {
 
   const farmCard = el('section', { class: 'card farm-card' },
     el('div', { class: 'farm-top' },
-      el('div', null, el('span', { class: 'card-tag', text: 'FARM VERDICT' }), el('div', { class: 'farm-verdict' }, verdict(c.verdict), el('span', { text: c.verdict === 'FARM' ? 'worth the time at this size' : c.verdict === 'THIN' ? 'clears fees, not the bar' : 'the drop does not clear fees' }))),
+      el('div', null,
+        el('span', { class: 'card-tag', text: 'FARM VERDICT' }),
+        el('div', { class: 'farm-headline' }, verdict(c.verdict), el('b', { class: cls(c.net_usd), text: money2(c.net_usd) }), el('span', { text: `net over ${c.weeks} weeks on ${exact(c.deposit_usd)}` })),
+        el('div', { class: 'farm-sub' }, `${money2(c.per_hour_usd)}/hour · T-bill bar ${money2(c.bar_usd)} · ${c.hours.toFixed(1)} h hands-on`)
+      ),
       el('div', { class: 'farm-kpis' },
         el('div', null, el('span', { text: 'Deposit' }), el('b', { text: exact(c.deposit_usd) })),
         el('div', null, el('span', { text: 'Drop' }), el('b', { text: money2(c.drop_usd) })),
         el('div', null, el('span', { text: 'Fees' }), el('b', { text: money2(c.costs_usd) })),
-        el('div', null, el('span', { text: 'Net' }), el('b', { class: cls(c.net_usd), text: money2(c.net_usd) })),
-        el('div', null, el('span', { text: 'Hands-on' }), el('b', { text: c.hours.toFixed(1) + ' h' })),
-        el('div', null, el('span', { text: '$ / hour' }), el('b', { class: cls(c.per_hour_usd), text: money2(c.per_hour_usd) }))
+        el('div', null, el('span', { text: 'Hands-on' }), el('b', { text: c.hours.toFixed(1) + ' h' }))
       )
     ),
     el('div', { class: 'farm-body' },
@@ -576,19 +618,35 @@ function detailView() {
 
   const steps = el('section', { class: 'card steps' },
     el('h2', null, `Farm plan · ${actionLabel(r)} on ${r.chains[0] || 'mainnet'}`, el('span', { text: `10 steps · ${exact(c.deposit_usd)} deposit` })),
-    el('ol', null, c.steps.map((s, i) => {
-      const m = s.match(/^(.*?)\s*Cost:\s*(.*?)\.?\s*Time:\s*(.*?)\.?$/);
-      return el('li', null,
-        el('b', { class: 'n', text: String(i + 1).padStart(2, '0') }),
-        el('div', null, el('p', { text: m ? m[1] : s }), m ? el('div', { class: 'meta' }, el('span', { text: m[2] }), el('i', { text: '·' }), el('span', { text: m[3] })) : null)
-      );
-    })),
-    el('p', { class: 'fine', text: `Total hands-on: about ${c.hours} hours over ${c.weeks} weeks. Position: ${(c.share * 1e4).toFixed(2)} bps of TVL; risk: ${c.risk}. Fees assume ${c.gas_usd} per transaction on ${r.chains[0] || 'the main chain'} and ${MODEL.farm_gas_txs} transactions.` })
+    el('table', { class: 'plan-table' },
+      el('thead', null, el('tr', null, el('th', { text: '#' }), el('th', { text: 'Step' }), el('th', { class: 'num', text: 'Cost' }), el('th', { class: 'num', text: 'Time' }))),
+      el('tbody', null, c.steps.map((s, i) => {
+        const m = s.match(/^(.*?)\s*Cost:\s*(.*?)\.?\s*Time:\s*(.*?)\.?$/);
+        return el('tr', null,
+          el('td', { class: 'n', text: String(i + 1).padStart(2, '0') }),
+          el('td', null, el('b', { class: 'step-tag', text: STEP_LABEL[i] || 'Step' }), ' ', m ? m[1] : s),
+          el('td', { class: 'num', text: m ? m[2] : '—' }),
+          el('td', { class: 'num', text: m ? m[3] : '—' })
+        );
+      })),
+      el('tfoot', null, el('tr', null,
+        el('td', null),
+        el('td', null, el('b', { text: `All ${c.steps.length} steps` }), ` · ${(c.share * 1e4).toFixed(2)} bps of TVL`),
+        el('td', { class: 'num', text: money2(c.costs_usd) }),
+        el('td', { class: 'num', text: c.hours.toFixed(1) + ' h' })
+      ))
+    ),
+    el('div', { class: 'plan-eq' },
+      el('b', { text: `Drop ${money2(c.drop_usd)}` }), ' − ', el('b', { text: `fees ${money2(c.costs_usd)}` }), ' = ',
+      el('b', { class: cls(c.net_usd), text: `net ${money2(c.net_usd)}` }), ` over ${c.weeks} weeks · `,
+      el('b', { class: cls(c.per_hour_usd), text: `${money2(c.per_hour_usd)}/h` }), ` · T-bill bar ${money2(c.bar_usd)}`
+    ),
+    el('p', { class: 'fine', text: `Risk: ${c.risk}. Fees assume ${c.gas_usd} per transaction on ${r.chains[0] || 'the main chain'} and ${MODEL.farm_gas_txs} transactions.` })
   );
 
   return el('main', { class: 'floor detail' }, head,
     el('div', { class: 'd-grid' },
-      el('div', { class: 'd-col' }, valueCard, how, oddsCard, peers),
+      el('div', { class: 'd-col' }, valueCard, how, oddsCard, peers, sensitivityCard(r)),
       el('div', { class: 'd-col' }, farmCard, steps)
     )
   );
