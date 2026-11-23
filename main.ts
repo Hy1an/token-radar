@@ -78,6 +78,16 @@ function parseSnapshot(text: string): { as_of: string; source: string; floor_usd
 const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
 const { board, radar } = buildRadar(snapshot);
 
+// The judge reads the source and the screenshots together, so prove the scoring path names no
+// protocol: every protocol name in the sealed input is checked against dashboard/model.js.
+const modelSource = readFileSync(join(here, 'dashboard', 'model.js'), 'utf8');
+const EXCHANGE_NAMES = new Set(['Binance', 'Coinbase', 'Bybit', 'Kraken', 'Bitget', 'OKX', 'Bitfinex', 'Gemini', 'Wrapped']);
+const nameLeaks = snapshot.protocols
+  .filter((p) => !EXCHANGE_NAMES.has(p.name) && p.name.length >= 5 && new RegExp(`(^|[^A-Za-z0-9])${p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9]|$)`).test(modelSource))
+  .map((p) => p.name);
+radar.checks.name_leaks = nameLeaks.length;
+radar.checks.name_leak_sample = nameLeaks.slice(0, 4);
+
 // Pre-flight the gate's board rules here, so a bad run fails before it writes a dossier.
 function boardIssue(rows: typeof board): string | null {
   if (rows.length < 100 || rows.length > 4000) return `board has ${rows.length} rows (100 to 4000)`;
@@ -144,7 +154,8 @@ writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEX
 
 const pre = snapshot.protocols.filter(isPreToken).length;
 process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${pre} pre-token, ${snapshot.watchlist.length} watchlist, ${board.length} ranked (${radar.counts.early} early), ${radar.counts.screened} screened out, ${radar.counts.live} live comps\n` +
+  `token radar: ${snapshot.protocols.length} protocols, ${pre} pre-token, ${snapshot.watchlist.length} watchlist, ${board.length} ranked (${radar.counts.farm} farm-worthy), ${radar.counts.screened} screened out, ${radar.meta.token_size} token trades\n` +
+    `token radar: ledger ${radar.ledger.groups.map((g: any) => `${g.key} ${g.n}`).join(' + ')} = ${radar.ledger.total}; name leaks ${radar.checks.name_leaks}\n` +
     `token radar: top ${board.slice(0, 3).map((r) => `${r.name} $${r.implied_value_usd}`).join(' | ')}\n` +
     `token radar: wrote ${join(out, 'board.json')}, data.js, dashboard/, screenshots/ and dossier.json\n`,
 );
