@@ -1,4 +1,4 @@
-// Radar-4: value, token odds, the 758-record ledger and the farm planner, in one file.
+// Radar-5: value, token odds, the 758-record ledger and the farm planner, in one file.
 //
 // main.ts require()s this file in Node to write board.json and data.js; index.html loads the same
 // file as a classic script, so every number on the page is recomputed from the row's own snapshot
@@ -16,7 +16,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'radar-4';
+const VERSION = 'radar-5';
 
 const MODEL = {
   version: VERSION,

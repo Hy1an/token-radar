@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/token-radar-01/Hy1an/token-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/Hy1an/token-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-A pre-token launch radar over the sealed DefiLlama snapshot. The board ranks 197 protocols — the 40-protocol house watchlist, 138 below-floor finds and 19 above-floor records the house leaves off-list — by an implied launch value. Every row carries its snapshot inputs, a confidence band, comparable live tokens and a ten-step farm plan with cost and time. A detail page rebuilds each number from the fitted coefficients, and the page works with no network.
+A pre-token launch radar over the sealed DefiLlama snapshot. The board ranks 197 protocols — the 40-protocol house watchlist, 138 below-floor finds and 19 above-floor records the house leaves off-list — by an implied launch value. The opening strip puts the held-out calibration and token odds next to the roster, not below the fold. Every row carries its snapshot inputs, a confidence band, comparable live tokens and a ten-step farm plan with cost and time. A detail page rebuilds each number from the fitted coefficients, walks through the value chain line by line, and prices every deposit × drop-share combination in the farm plan. The page works with no network.
 
 ## Run it
 

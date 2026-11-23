@@ -164,7 +164,7 @@ function hero() {
     ),
     el('div', { class: 'kpis' },
       kpi(String(D.counts.rows), 'ranked pre-token', `${D.counts.watchlist} watch · ${D.counts.below_floor} early · ${D.counts.off_list} off-list`),
-      kpi(usd(D.counts.implied_usd), 'implied value, summed', `on ${usd(D.counts.tvl_usd)} of TVL`),
+      kpi(pct0(v.band_cover), 'held-out inside P25–P75', `${pct0(v.within3)} within 3× · band ×${v.band_mult[0]}–×${v.band_mult[1]}`),
       kpi('×' + v.loo.median.toFixed(2), 'held-out miss, median', `walk-forward ×${v.holdout.median.toFixed(2)} · flat ×${v.terms[0].loo.toFixed(2)}`),
       kpi(pct1(o.cv.accuracy), 'token odds, 10-fold', `base ${pct1(o.base_rate)} · Brier ${o.cv.brier.toFixed(3)}`),
       kpi(String(D.counts.farm), 'worth farming', `net beats T-bill and $${MODEL.farm_min_hourly}/h`, 'mint'),
@@ -191,7 +191,7 @@ function ledger() {
 function evidence() {
   const v = D.value;
   const o = D.odds;
-  const term = (t) => el('div', { class: 'ev-row' + (t.kept ? ' strong' : '') },
+  const term = (t) => el('div', { class: 'ev-row ev-term' + (t.kept ? ' strong' : '') },
     el('span', { text: t.label }),
     el('b', { text: '×' + t.loo.toFixed(2), title: 'leave-one-out median miss' }),
     el('b', { class: 'alt', text: '×' + t.holdout.toFixed(2), title: 'five-fold walk-forward median miss' }),
@@ -200,6 +200,7 @@ function evidence() {
   return el('section', { class: 'evidence' },
     el('div', { class: 'ev-card' },
       el('h3', null, 'Value model', el('span', { text: 'leave-one-out / 5-fold walk-forward' })),
+      el('div', { class: 'ev-head' }, el('span', { text: 'term, added to a flat multiple' }), el('b', { text: 'LOO' }), el('b', { text: 'WF' }), el('em', { text: 'verdict' })),
       v.terms.map((t) => term(t)),
       el('div', { class: 'ev-foot', text: `Fit on ${v.n_train} traded peers (${v.n_fit} after a ${(v.trim * 100).toFixed(0)}% trim), ridge ${v.lambda}. ${v.terms.filter((t) => t.kept).length} of ${v.terms.length - 1} candidate terms survives both tests; growth and age price the odds. ${pct0(v.band_cover)} of held-out peers land inside the band, ${pct0(v.within3)} within 3×.` })
     ),
@@ -411,11 +412,11 @@ function detailView() {
   const how = el('section', { class: 'card' },
     el('h2', null, 'How the figure is made', el('span', { text: 'every input is a snapshot field' })),
     el('div', { class: 'ledger-lines' },
-      el('div', null, el('span', { text: 'TVL' }), el('b', { text: usd(r.tvl_usd) })),
-      el('div', null, el('span', { text: 'Base multiple' }), el('b', { text: mult(base) })),
-      el('div', null, el('span', { text: '× size term' }), el('b', { text: mult(tMult(v.terms[1])) })),
-      el('div', { class: 'sum' }, el('span', { text: '= launch value' }), el('b', { text: usd(v.launch_value_usd) })),
-      el('div', null, el('span', { text: '× token odds' }), el('b', { text: pct0(v.odds) })),
+      el('div', null, el('span', null, 'TVL', el('em', { text: `snapshot ${D.meta.as_of}` })), el('b', { text: usd(r.tvl_usd) })),
+      el('div', null, el('span', null, 'Base multiple', el('em', { text: `fitted on ${D.value.n_train} peers · flat ×${D.value.terms[0].loo.toFixed(2)}` })), el('b', { text: mult(base) })),
+      el('div', null, el('span', null, '× size term', el('em', { text: `slope ${v.terms[1].coef.toFixed(3)} · ×${Math.pow(10, v.terms[1].coef).toFixed(2)} per 10× TVL` })), el('b', { text: mult(tMult(v.terms[1])) })),
+      el('div', { class: 'sum' }, el('span', null, '= launch value', el('em', { text: `held-out ×${D.value.loo.median.toFixed(2)} LOO · ×${D.value.holdout.median.toFixed(2)} walk-forward` })), el('b', { text: usd(v.launch_value_usd) })),
+      el('div', null, el('span', null, '× token odds', el('em', { text: `size, age, growth, family · ${pct1(D.odds.cv.accuracy)} 10-fold` })), el('b', { text: pct0(v.odds) })),
       el('div', { class: 'sum mint' }, el('span', { text: '= implied value' }), el('b', { text: usd(v.implied_value_usd) }))
     ),
     el('p', { class: 'fine', text: `Fitted on ${D.value.n_train} traded peers; leave-one-out median miss ×${D.value.loo.median.toFixed(2)}, five-fold walk-forward ×${D.value.holdout.median.toFixed(2)}, P25/P75 ×${D.value.loo.p25.toFixed(2)}/×${D.value.loo.p75.toFixed(2)}. Seven-day growth and age were tested with the size curve and raised the walk-forward miss, so they price the token odds instead. Range is the P25–P75 residual band around the launch value, times the same odds.` })
@@ -448,17 +449,21 @@ function detailView() {
     el('p', { class: 'fine', text: 'The odds model is fitted on all 758 records with size and age splines, family, growth and missingness; it names no protocol.' })
   );
 
-  const grid = el('div', { class: 'grid3' },
-    [0.5, 1, 2].map((f) => {
-      const dep = Math.round((c.deposit_usd * f) / 50) * 50;
-      const drop = MODEL.farm_drop_share * r.implied_value_usd * (dep / r.tvl_usd);
-      const net = drop - c.costs_usd;
-      return el('div', { class: f === 1 ? 'on' : null },
-        el('span', { text: f === 0.5 ? 'Half' : f === 1 ? 'Plan' : 'Double' }),
-        el('b', { text: exact(dep) }),
-        el('em', { text: `drop ${money2(drop)} · net ${money2(net)}` })
-      );
-    })
+  const shares = [0.035, 0.07, 0.14, 0.28];
+  const deposits = [2500, 5000, 10000, 20000];
+  const planDep = deposits.reduce((best, d) => (Math.abs(d - c.deposit_usd) < Math.abs(best - c.deposit_usd) ? d : best), deposits[0]);
+  const netAt = (dep, share) => share * r.implied_value_usd * (dep / r.tvl_usd) - c.costs_usd;
+  const grid = el('div', { class: 'dropgrid' },
+    el('span', { class: 'dg-corner', text: 'net' }),
+    shares.map((s) => el('b', { class: 'dg-col' + (s === MODEL.farm_drop_share ? ' on' : ''), text: (s * 100).toFixed(s < 0.1 ? 1 : 0) + '%' })),
+    deposits.flatMap((dep) => [
+      el('span', { class: 'dg-row', text: exact(dep) }),
+      ...shares.map((s) => {
+        const net = netAt(dep, s);
+        const on = s === MODEL.farm_drop_share && dep === planDep;
+        return el('div', { class: 'dg-cell ' + (net < 0 ? 'neg' : '') + (on ? ' on' : ''), title: `deposit ${exact(dep)} · ${(s * 100).toFixed(1)}% drop share` }, el('b', { text: money2(net) }));
+      }),
+    ])
   );
 
   const farmCard = el('section', { class: 'card farm-card' },
@@ -475,7 +480,8 @@ function detailView() {
     ),
     el('div', { class: 'farm-body' },
       el('div', null,
-        el('div', { class: 'flat', text: `At ${(c.share * 1e4).toFixed(2)} bps of TVL, the ${(MODEL.farm_drop_share * 100).toFixed(0)}% drop share pays ${money2(c.drop_usd)} on a ${exact(c.deposit_usd)} deposit over ${c.weeks} weeks. The same deposit in a 12-week T-bill pays ${money2(c.bar_usd)}; the plan keeps ${money2(c.net_usd)} after ${money2(c.costs_usd)} of fees.` }),
+        el('div', { class: 'flat', text: `The ${exact(c.deposit_usd)} plan is ${(c.share * 1e4).toFixed(2)} bps of TVL; a ${(MODEL.farm_drop_share * 100).toFixed(0)}% drop share pays ${money2(c.drop_usd)} over ${c.weeks} weeks. The same deposit in a 12-week T-bill pays ${money2(c.bar_usd)}; after ${money2(c.costs_usd)} of fees the plan keeps ${money2(c.net_usd)}.` }),
+        el('div', { class: 'dg-cap', text: `Net after ${money2(c.costs_usd)} fees · outlined cell is the plan` }),
         grid
       ),
       el('div', { class: 'tbill' },
@@ -501,8 +507,8 @@ function detailView() {
 
   return el('main', { class: 'floor detail' }, head,
     el('div', { class: 'd-grid' },
-      el('div', { class: 'd-col' }, valueCard, how, peers),
-      el('div', { class: 'd-col' }, farmCard, oddsCard, steps)
+      el('div', { class: 'd-col' }, valueCard, how, oddsCard, peers),
+      el('div', { class: 'd-col' }, farmCard, steps)
     )
   );
 }
@@ -516,7 +522,7 @@ function methodView() {
   const coefRow = (label, i) => el('tr', null, el('td', null, el('b', { text: label })), el('td', { class: 'num', text: v.coef[i].toFixed(4) }), el('td', { class: 'num', text: reading(i) }));
   return el('main', { class: 'floor method' },
     el('section', { class: 'm-head' },
-      el('span', { class: 'eyebrow', text: 'METHOD · RADAR-4' }),
+      el('span', { class: 'eyebrow', text: 'METHOD · RADAR-5' }),
       el('h1', null, 'Two fits on the snapshot’s own record, and a ledger that covers every record once.'),
       el('p', null, 'The value fit prices what a launch would be worth per dollar of TVL. The odds fit prices how often a peer with this size, age and family records a token at all. The board multiplies them; the farm plan tests whether the drop beats a T-bill and a wage.')
     ),
