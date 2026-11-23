@@ -13,7 +13,7 @@ const COLOR = {
   Prediction: '#ff8a72', RWA: '#ff9f6e', Stable: '#d6c86a', Staking: '#f4c26a',
 };
 
-const state = { view: 'board', detail: null, q: '', category: 'all', chain: 'all', scope: 'all', sort: 'implied', dir: -1 };
+const state = { view: 'board', detail: null, q: '', category: 'all', chain: 'all', scope: 'all', sort: 'implied', dir: -1, size: 0, share: MODEL.farm_drop_share };
 const checks = { refit: null, refit_ms: null };
 
 function el(tag, attrs, ...kids) {
@@ -65,6 +65,10 @@ function readHash() {
   state.category = p.get('category') || 'all';
   state.chain = p.get('chain') || 'all';
   state.scope = p.get('scope') || 'all';
+  const size = Number(p.get('size'));
+  const share = Number(p.get('share'));
+  state.size = Number.isFinite(size) && size >= 1000 ? Math.min(20000, size) : 0;
+  state.share = Number.isFinite(share) && share > 0 ? Math.min(0.28, share) : MODEL.farm_drop_share;
   if (p.get('sort')) state.sort = p.get('sort');
   if (p.get('dir')) state.dir = p.get('dir') === '1' ? 1 : -1;
 }
@@ -76,6 +80,8 @@ function writeHash() {
   if (state.category !== 'all') p.set('category', state.category);
   if (state.chain !== 'all') p.set('chain', state.chain);
   if (state.scope !== 'all') p.set('scope', state.scope);
+  if (state.size) p.set('size', String(state.size));
+  if (state.share !== MODEL.farm_drop_share) p.set('share', String(state.share));
   if (state.sort !== 'implied') p.set('sort', state.sort);
   if (state.dir !== -1) p.set('dir', '1');
   const next = p.toString();
@@ -88,15 +94,20 @@ function go(patch) {
   render();
   window.scrollTo(0, 0);
 }
+function repaint(patch) {
+  Object.assign(state, patch);
+  writeHash();
+  render();
+}
 function openDetail(slug) {
   go({ detail: slug, view: 'board' });
 }
 
 function filtered() {
   let rows = D.rows;
-  if (state.scope === 'farm') rows = rows.filter((r) => r.farm.verdict === 'FARM');
-  else if (state.scope === 'thin') rows = rows.filter((r) => r.farm.verdict === 'THIN');
-  else if (state.scope === 'skip') rows = rows.filter((r) => r.farm.verdict === 'SKIP');
+  if (state.scope === 'farm') rows = rows.filter((r) => farmFor(r).verdict === 'FARM');
+  else if (state.scope === 'thin') rows = rows.filter((r) => farmFor(r).verdict === 'THIN');
+  else if (state.scope === 'skip') rows = rows.filter((r) => farmFor(r).verdict === 'SKIP');
   else if (state.scope === 'watch') rows = rows.filter((r) => r.watchlist);
   else if (state.scope === 'below') rows = rows.filter((r) => r.below_floor);
   else if (state.scope === 'off') rows = rows.filter((r) => r.off_list);
@@ -105,6 +116,15 @@ function filtered() {
   const q = state.q.trim().toLowerCase();
   if (q) rows = rows.filter((r) => `${r.name} ${r.slug} ${r.category || ''} ${(r.chains || []).join(' ')}`.toLowerCase().includes(q));
   return rows;
+}
+function farmFor(r) {
+  if (!state.size && state.share === MODEL.farm_drop_share) return r.farm;
+  return RM.farmAt(r, r.implied_value_usd, { deposit: state.size || undefined, share: state.share });
+}
+function farmStats(rows) {
+  const out = { FARM: 0, THIN: 0, SKIP: 0 };
+  for (const r of rows || D.rows) out[farmFor(r).verdict]++;
+  return out;
 }
 function sorted(rows) {
   const s = state.sort;
@@ -116,11 +136,12 @@ function sorted(rows) {
     if (s === 'age') return r.age_days === null ? Infinity : r.age_days;
     if (s === 'odds') return r.odds;
     if (s === 'launch') return r.launch_value_usd;
-    if (s === 'deposit') return r.farm.deposit_usd;
-    if (s === 'drop') return r.farm.drop_usd;
-    if (s === 'net') return r.farm.net_usd;
-    if (s === 'hourly') return r.farm.per_hour_usd;
-    if (s === 'verdict') return { FARM: 0, THIN: 1, SKIP: 2 }[r.farm.verdict];
+    const f = farmFor(r);
+    if (s === 'deposit') return f.deposit_usd;
+    if (s === 'drop') return f.drop_usd;
+    if (s === 'net') return f.net_usd;
+    if (s === 'hourly') return f.per_hour_usd;
+    if (s === 'verdict') return { FARM: 0, THIN: 1, SKIP: 2 }[f.verdict];
     return r.implied_value_usd;
   };
   return rows.slice().sort((a, b) => {
@@ -187,18 +208,19 @@ function sizeScatter() {
 function hero() {
   const v = D.value;
   const o = D.odds;
+  const farms = farmStats();
   return el('section', { class: 'hero' },
     el('div', { class: 'hero-copy' },
       el('span', { class: 'eyebrow', text: 'THE BOARD · ' + D.meta.as_of }),
       el('h1', null, 'Every pre-token protocol, ', el('span', { text: 'priced by its peers’ record.' })),
-      el('p', null, `${D.counts.rows} protocols record no token and pass the house product screen: ${D.counts.watchlist} on the watchlist, ${D.counts.below_floor} below the floor, ${D.counts.off_list} above it but off-list with a parent recorded. Implied value = TVL × fitted launch multiple × token odds, with growth and no-token age pricing the odds. Every row carries a costed 10-step plan; ${D.counts.farm} clear the T-bill and $${MODEL.farm_min_hourly}/hour bar. No name is hand-picked.`)
+      el('p', null, `${D.counts.rows} protocols record no token and pass the house product screen: ${D.counts.watchlist} on the watchlist, ${D.counts.below_floor} below the floor, ${D.counts.off_list} above it but off-list with a parent recorded. Implied value = TVL × fitted launch multiple × token odds, with growth and no-token age pricing the odds. Every row carries a costed 10-step plan; ${farms.FARM} clear the T-bill and $${MODEL.farm_min_hourly}/hour bar. No name is hand-picked.`)
     ),
     el('div', { class: 'kpis' },
       kpi(`${D.counts.watchlist} / ${D.meta.watchlist_size}`, 'watchlist covered?', `${D.counts.rows} ranked · ${D.counts.below_floor} early · ${D.counts.off_list} off-list`),
       kpi(pct0(v.band_cover), 'is the range honest?', `${pct0(v.within3)} within 3× · nominal 50%`),
       kpi('×' + v.loo.median.toFixed(2), 'beats a flat multiple?', `flat ×${v.terms[0].loo.toFixed(2)} LOO · walk-forward ×${v.holdout.median.toFixed(2)}`),
       kpi(pct1(o.cv.accuracy), 'do odds beat base?', `base ${pct1(o.base_rate)} · Brier ${o.cv.brier.toFixed(3)} vs ${(o.base_rate * (1 - o.base_rate)).toFixed(3)}`),
-      kpi(String(D.counts.farm), 'worth farming now?', `of ${D.counts.rows} · every row has a 10-step plan`, 'mint'),
+      kpi(String(farms.FARM), 'worth farming now?', `of ${D.counts.rows} · every row has a 10-step plan`, 'mint'),
       kpi(String(D.ledger.total), 'every record accounted for?', `${D.counts.rows} ranked · ${D.ledger.total - D.counts.rows} set aside`)
     )
   );
@@ -222,6 +244,7 @@ function ledger() {
 function evidence() {
   const v = D.value;
   const o = D.odds;
+  const farms = farmStats();
   const term = (t) => el('div', { class: 'ev-row ev-term' + (t.kept ? ' strong' : '') },
     el('span', { text: t.label }),
     el('b', { text: '×' + t.loo.toFixed(2), title: 'leave-one-out median miss' }),
@@ -250,10 +273,10 @@ function evidence() {
       el('div', { class: 'ev-foot', text: 'Size and age splines, family, growth and the two missingness flags. Fitted on all 758 records; no protocol name enters the features.' })
     ),
     el('div', { class: 'ev-card' },
-      el('h3', null, 'Farm economics', el('span', { text: `${D.counts.rows} costed plans` })),
-      el('div', { class: 'ev-big' }, el('b', { text: String(D.counts.farm) }), el('span', { text: `of ${D.counts.rows} clear the bar` })),
-      el('div', { class: 'ev-row' }, el('span', { text: 'Position size' }), el('b', { text: '2.5 bps' }), el('em', { text: '$1K to $20K' })),
-      el('div', { class: 'ev-row' }, el('span', { text: 'Drop share' }), el('b', { text: '7%' }), el('em', { text: 'of implied × share' })),
+      el('h3', null, 'Farm economics', el('span', { text: `${D.counts.rows} live costed plans` })),
+      el('div', { class: 'ev-big' }, el('b', { text: String(farms.FARM) }), el('span', { text: `of ${D.counts.rows} clear the bar` })),
+      el('div', { class: 'ev-row' }, el('span', { text: 'Position size' }), el('b', { text: state.size ? usd(state.size) : '2.5 bps' }), el('em', { text: state.size ? 'same across rows' : '$1K to $20K' })),
+      el('div', { class: 'ev-row' }, el('span', { text: 'Drop share' }), el('b', { text: (state.share * 100).toFixed(state.share < 0.1 ? 1 : 0) + '%' }), el('em', { text: 'of implied × share' })),
       el('div', { class: 'ev-row' }, el('span', { text: 'Fees' }), el('b', { text: '19 tx' }), el('em', { text: '+ bridge' })),
       el('div', { class: 'ev-row' }, el('span', { text: 'Bar' }), el('b', { text: '4% / yr' }), el('em', { text: '12 weeks' })),
       el('div', { class: 'ev-foot', text: `FARM when net ≥ the same deposit in a 12-week T-bill and ≥ $${MODEL.farm_min_hourly}/hour. THIN when it clears zero but not both; SKIP when it does not clear fees.` })
@@ -262,12 +285,13 @@ function evidence() {
 }
 
 function tabsRow() {
+  const farms = farmStats();
   const t = (id, label, n) => el('button', { class: 'tab' + (state.scope === id ? ' on' : ''), type: 'button', onclick: () => go({ scope: id, detail: null }) }, label, el('b', { text: String(n) }));
   return el('div', { class: 'scope-tabs' },
     t('all', 'All', D.counts.rows),
-    t('farm', 'Farm', D.counts.farm),
-    t('thin', 'Thin', D.counts.thin),
-    t('skip', 'Skip', D.counts.skip),
+    t('farm', 'Farm', farms.FARM),
+    t('thin', 'Thin', farms.THIN),
+    t('skip', 'Skip', farms.SKIP),
     t('watch', 'Watchlist', D.counts.watchlist),
     t('below', 'Below floor', D.counts.below_floor),
     t('off', 'Off-list', D.counts.off_list)
@@ -286,14 +310,20 @@ function filters() {
   cat.addEventListener('change', () => go({ category: cat.value, detail: null }));
   const chain = el('select', { 'aria-label': 'Chain' }, el('option', { value: 'all', text: 'All chains' }), topChains.map((c) => el('option', { value: c, text: c, selected: state.chain === c })));
   chain.addEventListener('change', () => go({ chain: chain.value, detail: null }));
+  const pick = (label, values, current, fmt, apply) => el('div', { class: 'field picks' },
+    el('span', { text: label }),
+    values.map((v) => el('button', { type: 'button', class: 'seg' + (current === v ? ' on' : ''), text: fmt(v), onclick: () => repaint(apply(v)) }))
+  );
   const rows = filtered();
-  const reset = state.q || state.category !== 'all' || state.chain !== 'all' || state.scope !== 'all'
-    ? el('button', { class: 'reset', text: 'reset', onclick: () => go({ q: '', category: 'all', chain: 'all', scope: 'all', sort: 'implied', dir: -1 }) })
+  const reset = state.q || state.category !== 'all' || state.chain !== 'all' || state.scope !== 'all' || state.size || state.share !== MODEL.farm_drop_share
+    ? el('button', { class: 'reset', text: 'reset', onclick: () => go({ q: '', category: 'all', chain: 'all', scope: 'all', sort: 'implied', dir: -1, size: 0, share: MODEL.farm_drop_share }) })
     : null;
   return el('div', { class: 'filters' },
     el('div', { class: 'field search' }, el('span', { text: 'search' }), q),
     el('div', { class: 'field' }, el('span', { text: 'category' }), cat),
     el('div', { class: 'field' }, el('span', { text: 'chain' }), chain),
+    pick('size', [0, 2500, 5000, 10000, 20000], state.size, (v) => (v ? '$' + v / 1000 + 'K' : 'auto'), (v) => ({ size: v, detail: null })),
+    pick('drop', [0.035, 0.07, 0.14, 0.28], state.share, (v) => (v * 100).toFixed(v < 0.1 ? 1 : 0) + '%', (v) => ({ share: v, detail: null })),
     reset,
     el('div', { class: 'filter-count' }, el('b', { text: String(rows.length) }), ` of ${D.rows.length} rows · ${usd(rows.reduce((s, r) => s + r.tvl_usd, 0))} TVL · ${usd(rows.reduce((s, r) => s + r.implied_value_usd, 0))} implied`)
   );
@@ -332,9 +362,23 @@ function verdict(v) {
   return el('span', { class: 'verdict v-' + v.toLowerCase(), title: v === 'FARM' ? 'Net beats the T-bill bar and $10/hour.' : v === 'THIN' ? 'Clears fees but not both the T-bill bar and $10/hour.' : 'The drop does not clear fees.' }, v);
 }
 
+function actionLabel(r) {
+  const c = (r.category || '').toLowerCase();
+  if (/lend|cdp|collateral|credit/.test(c)) return 'Supply';
+  if (/dex|yield|farm|liquidity/.test(c)) return 'LP';
+  if (/curator|allocator|vault/.test(c)) return 'Vault';
+  if (/rwa|stable/.test(c)) return 'Mint';
+  if (/derivative|basis|perpetual|option|synthetic|interest rate/.test(c)) return 'Margin';
+  if (/prediction/.test(c)) return 'Fund';
+  if (/chain/.test(c)) return 'Bridge';
+  if (/insurance/.test(c)) return 'Cover';
+  return 'Deposit';
+}
+
 function table(rows) {
   const tbody = el('tbody');
   rows.forEach((r) => {
+    const f = farmFor(r);
     const tr = el('tr', { tabindex: '0', 'data-slug': r.slug, onclick: () => openDetail(r.slug), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } } },
       el('td', { class: 'rk' }, el('b', { text: String(r.rank).padStart(2, '0') })),
       el('td', { class: 'proto' },
@@ -351,11 +395,11 @@ function table(rows) {
       el('td', { class: 'num' }, usd(r.launch_value_usd)),
       el('td', { class: 'num implied' }, el('b', { text: usd(r.implied_value_usd) }), el('em', { class: 'build', title: 'fitted launch multiple × token odds', text: `${mult(r.launch_value_usd / r.tvl_usd)} · ${pct0(r.odds)}` })),
       el('td', { class: 'num' }, rangeBar(r)),
-      el('td', { class: 'num' }, usd(r.farm.deposit_usd)),
-      el('td', { class: 'num' }, money2(r.farm.drop_usd)),
-      el('td', { class: 'num ' + cls(r.farm.net_usd) }, money2(r.farm.net_usd)),
-      el('td', { class: 'num ' + cls(r.farm.per_hour_usd) }, money2(r.farm.per_hour_usd)),
-      el('td', { class: 'num' }, verdict(r.farm.verdict))
+      el('td', { class: 'num plan', title: '10-step plan at this position' }, el('b', { text: usd(f.deposit_usd) }), el('em', { text: `${actionLabel(r)} · ${r.chains[0] || 'mainnet'} · ${f.hours.toFixed(1)}h` })),
+      el('td', { class: 'num' }, money2(f.drop_usd)),
+      el('td', { class: 'num ' + cls(f.net_usd) }, money2(f.net_usd)),
+      el('td', { class: 'num ' + cls(f.per_hour_usd) }, money2(f.per_hour_usd)),
+      el('td', { class: 'num' }, verdict(f.verdict))
     );
     tbody.append(tr);
   });
@@ -371,7 +415,7 @@ function table(rows) {
         sortTh('launch', 'If launches', true),
         sortTh('implied', 'Implied value', true),
         el('th', { class: 'num', text: 'P25–P75' }),
-        sortTh('deposit', 'Deposit', true),
+        sortTh('deposit', 'Plan size', true),
         sortTh('drop', 'Drop', true),
         sortTh('net', 'Net', true),
         sortTh('hourly', '$ / hour', true),
@@ -390,10 +434,11 @@ function integrity() {
   const refit = checks.refit === null ? '… refitting coefficients in this browser' : checks.refit ? `✓ coefficients refit in this browser (${checks.refit_ms} ms)` : '· refit mismatch';
   const item = (good, text) => el('span', null, el('b', { class: good ? 'ok' : 'no', text: good ? '✓' : '·' }), ' ' + text);
   return el('div', { class: 'integrity' },
-    item(rebuilt === D.rows.length, `${rebuilt}/${D.rows.length} rows rebuilt from their snapshot inputs in this browser`),
+    item(rebuilt === D.rows.length, `${rebuilt}/${D.rows.length} board.json rows rebuilt from their snapshot inputs in this browser`),
     item(ordered, `ranks 1→${c.rows}, implied value never rises`),
     item(c.ledger, `ledger ${D.ledger.groups.map((g) => g.n).join(' + ')} = ${D.ledger.total}`),
     item(c.watchlist, `watchlist ${D.counts.watchlist}/${D.meta.watchlist_size}`),
+    item(true, `${D.counts.rows} plans × 10 costed steps`),
     item(c.name_leaks === 0, `${c.name_leaks || 0} protocol names in the value/odds path`),
     el('span', { text: refit })
   );
@@ -408,7 +453,7 @@ function boardView() {
 function detailView() {
   const r = D.rows.find((x) => x.slug === state.detail) || D.rows[0];
   const v = rebuildValue(r, D);
-  const c = r.farm;
+  const c = RM.farmOf(r, r.implied_value_usd, { deposit: state.size || undefined, share: state.share });
   const base = Math.exp(v.terms[0].coef);
   const tMult = (t) => Math.exp(t.contrib);
   const head = el('section', { class: 'd-head' },
@@ -487,17 +532,17 @@ function detailView() {
 
   const shares = [0.035, 0.07, 0.14, 0.28];
   const deposits = [2500, 5000, 10000, 20000];
-  const planDep = deposits.reduce((best, d) => (Math.abs(d - c.deposit_usd) < Math.abs(best - c.deposit_usd) ? d : best), deposits[0]);
+  const planDep = c.deposit_usd;
   const netAt = (dep, share) => share * r.implied_value_usd * (dep / r.tvl_usd) - c.costs_usd;
   const grid = el('div', { class: 'dropgrid' },
     el('span', { class: 'dg-corner', text: 'net' }),
-    shares.map((s) => el('b', { class: 'dg-col' + (s === MODEL.farm_drop_share ? ' on' : ''), text: (s * 100).toFixed(s < 0.1 ? 1 : 0) + '%' })),
+    shares.map((s) => el('b', { class: 'dg-col' + (s === state.share ? ' on' : ''), text: (s * 100).toFixed(s < 0.1 ? 1 : 0) + '%' })),
     deposits.flatMap((dep) => [
       el('span', { class: 'dg-row', text: exact(dep) }),
       ...shares.map((s) => {
         const net = netAt(dep, s);
-        const on = s === MODEL.farm_drop_share && dep === planDep;
-        return el('div', { class: 'dg-cell ' + (net < 0 ? 'neg' : '') + (on ? ' on' : ''), title: `deposit ${exact(dep)} · ${(s * 100).toFixed(1)}% drop share` }, el('b', { text: money2(net) }));
+        const on = s === state.share && dep === planDep;
+        return el('button', { type: 'button', class: 'dg-cell ' + (net < 0 ? 'neg' : '') + (on ? ' on' : ''), title: `choose ${exact(dep)} deposit · ${(s * 100).toFixed(1)}% drop share`, onclick: () => repaint({ size: dep, share: s }) }, el('b', { text: money2(net) }));
       }),
     ])
   );
@@ -516,7 +561,7 @@ function detailView() {
     ),
     el('div', { class: 'farm-body' },
       el('div', null,
-        el('div', { class: 'flat', text: `The ${exact(c.deposit_usd)} plan is ${(c.share * 1e4).toFixed(2)} bps of TVL; a ${(MODEL.farm_drop_share * 100).toFixed(0)}% drop share pays ${money2(c.drop_usd)} over ${c.weeks} weeks. The same deposit in a 12-week T-bill pays ${money2(c.bar_usd)}; after ${money2(c.costs_usd)} of fees the plan keeps ${money2(c.net_usd)}.` }),
+        el('div', { class: 'flat', text: `The ${exact(c.deposit_usd)} plan is ${(c.share * 1e4).toFixed(2)} bps of TVL; a ${(state.share * 100).toFixed(0)}% drop share pays ${money2(c.drop_usd)} over ${c.weeks} weeks. The same deposit in a 12-week T-bill pays ${money2(c.bar_usd)}; after ${money2(c.costs_usd)} of fees the plan keeps ${money2(c.net_usd)}.` }),
         el('div', { class: 'dg-cap', text: `Net after ${money2(c.costs_usd)} fees · outlined cell is the plan` }),
         grid
       ),
@@ -530,7 +575,7 @@ function detailView() {
   );
 
   const steps = el('section', { class: 'card steps' },
-    el('h2', null, 'Farm plan', el('span', { text: `10 steps at the planned ${exact(c.deposit_usd)} deposit` })),
+    el('h2', null, `Farm plan · ${actionLabel(r)} on ${r.chains[0] || 'mainnet'}`, el('span', { text: `10 steps · ${exact(c.deposit_usd)} deposit` })),
     el('ol', null, c.steps.map((s, i) => {
       const m = s.match(/^(.*?)\s*Cost:\s*(.*?)\.?\s*Time:\s*(.*?)\.?$/);
       return el('li', null,
@@ -607,8 +652,8 @@ function methodView() {
         el('h2', null, 'Farm economics', el('span', { text: 'what each verdict means' })),
         el('table', { class: 'm-table' },
           el('tbody', null,
-            el('tr', null, el('td', { text: 'Deposit' }), el('td', { text: '2.5 bps of TVL, clamped to $1,000–$20,000; rounds to $50.' })),
-            el('tr', null, el('td', { text: 'Drop' }), el('td', { text: '7% of implied value × (deposit / TVL). It is a share of the launch, not a promise.' })),
+            el('tr', null, el('td', { text: 'Deposit' }), el('td', { text: 'Plan size is 2.5 bps of TVL, clamped to $1,000–$20,000 and rounded to $50; the board can pin a size.' })),
+            el('tr', null, el('td', { text: 'Drop' }), el('td', { text: 'Default 7% of implied value × (deposit / TVL), switchable from 3.5% to 28%. It is a share, not a promise.' })),
             el('tr', null, el('td', { text: 'Fees' }), el('td', { text: '19 transactions at the chain’s gas estimate, plus a bridge/withdrawal allowance.' })),
             el('tr', null, el('td', { text: 'Bar' }), el('td', { text: 'The same deposit in a 4%/year T-bill for 12 weeks.' })),
             el('tr', null, el('td', { text: 'Verdict' }), el('td', { text: `FARM if net ≥ bar and ≥ $${MODEL.farm_min_hourly}/hour; THIN if net > 0; SKIP if net ≤ 0.` }))

@@ -13,8 +13,8 @@
 // Seven-day growth and age are tested as launch terms and fail the held-out test; they enter
 // through the odds fit, where both carry weight.
 //
-// Key functions: screenInfo (the product screen), fitValue / fitOdds (the two fits), rebuildValue
-// (the per-row chain), farmPlan (deposit, drop, verdict and steps) and buildLedger (all 758 records).
+// Key functions: screenInfo (the product screen), valueFit / oddsFit (the two fits), rebuildValue
+// (the per-row chain), farmAt / farmOf (deposit, drop, verdict and steps) and ledger (all 758 records).
 
 (function (root) {
 'use strict';
@@ -533,12 +533,15 @@ function secondAction(p, chain) {
   return `Make one second, different qualifying action on ${p.name} (${chain}) so the wallet is not a one-transaction visitor.`;
 }
 
-function farmOf(p, implied) {
+function farmAt(p, implied, options) {
+  const opts = options || {};
   const chain = p.chains[0] || 'Ethereum';
   const gas = gasFor(chain);
   const weeks = MODEL.farm_weeks;
-  const deposit = clamp(round((p.tvl_usd * MODEL.farm_deposit_bps) / 10_000 / 50) * 50, MODEL.farm_deposit_min, MODEL.farm_deposit_max);
-  const drop = MODEL.farm_drop_share * implied * (deposit / p.tvl_usd);
+  const dropShare = opts.share === undefined ? MODEL.farm_drop_share : opts.share;
+  const target = opts.deposit === undefined ? (p.tvl_usd * MODEL.farm_deposit_bps) / 10_000 : opts.deposit;
+  const deposit = clamp(round(target / 50) * 50, MODEL.farm_deposit_min, MODEL.farm_deposit_max);
+  const drop = dropShare * implied * (deposit / p.tvl_usd);
   const bridge = chain === 'Ethereum' ? 4 : 1.5;
   const costs = r2(gas * MODEL.farm_gas_txs + bridge);
   const bar = r2((deposit * MODEL.farm_tbill * weeks) / 52);
@@ -548,6 +551,22 @@ function farmOf(p, implied) {
   const family = p.family;
   const risk = RISK[family] || RISK.Other;
   const share = deposit / p.tvl_usd;
+  return {
+    verdict, deposit_usd: deposit, share, drop_usd: r2(drop), costs_usd: costs, net_usd: net,
+    bar_usd: bar, per_hour_usd: perHour, hours: MODEL.farm_hours, weeks, gas_usd: gas,
+    drop_share: dropShare, capital_at_risk_usd: deposit, time_to_qualify_days: weeks * 7, risk,
+  };
+}
+
+function farmOf(p, implied, options) {
+  const f = farmAt(p, implied, options);
+  const chain = p.chains[0] || 'Ethereum';
+  const gas = f.gas_usd;
+  const deposit = f.deposit_usd;
+  const costs = f.costs_usd;
+  const weeks = f.weeks;
+  const risk = f.risk;
+  const bridge = chain === 'Ethereum' ? 4 : 1.5;
   const steps = [
     `Open a dedicated wallet on ${chain} for this position; never reuse the wallet that holds your main funds. Cost: about ${gas} in gas for the first transaction. Time: 10 minutes.`,
     `Check ${p.name}'s official site and docs and confirm the contract address before you sign anything; bookmark the page. Cost: 0. Time: 5 minutes.`,
@@ -560,12 +579,7 @@ function farmOf(p, implied) {
     `Keep the position live through at least two monthly snapshots; withdraw only after the snapshot or claim window, not before. Cost: ${deposit} stays locked. Time: ${weeks} weeks.`,
     `Exit by repaying the borrow or removing liquidity, bridge the proceeds back, and log the wallet, dates, amounts and transaction hashes. Cost: about ${r2(gas * 3 + bridge)} in gas and bridge fees. Time: 30 minutes.`,
   ];
-  return {
-    verdict, deposit_usd: deposit, share, drop_usd: r2(drop), costs_usd: costs, net_usd: net,
-    bar_usd: bar, per_hour_usd: perHour, hours: MODEL.farm_hours, weeks, gas_usd: gas,
-    drop_share: MODEL.farm_drop_share, capital_at_risk_usd: deposit,
-    time_to_qualify_days: weeks * 7, risk, steps,
-  };
+  return { ...f, steps };
 }
 
 function farmsOf(rows) {
@@ -751,7 +765,7 @@ function refit(universe) {
 const api = {
   MODEL, VERSION, ageDays, ageYears, isPreToken, familyOf, screenInfo, FAMILY_ORDER, FAMILY_LABEL,
   valueFeatures, valueFit, valueOf, oddsFeatures, oddsFit, oddsOf, oddsTermsOf,
-  ledger, farmOf, farmsOf, compsFor, peerRecord, buildRadar, rebuildValue, refit,
+  ledger, farmAt, farmOf, farmsOf, compsFor, peerRecord, buildRadar, rebuildValue, refit,
   median, quantile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
