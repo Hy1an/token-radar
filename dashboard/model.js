@@ -12,6 +12,9 @@
 // dollar of TVL; the odds say how often peers with this size, age and family record a token at all.
 // Seven-day growth and age are tested as launch terms and fail the held-out test; they enter
 // through the odds fit, where both carry weight.
+//
+// Key functions: screenInfo (the product screen), fitValue / fitOdds (the two fits), rebuildValue
+// (the per-row chain), farmPlan (deposit, drop, verdict and steps) and buildLedger (all 758 records).
 
 (function (root) {
 'use strict';

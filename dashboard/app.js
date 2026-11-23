@@ -153,6 +153,37 @@ function kpi(v, l, s, tone) {
   return el('div', { class: 'kpi ' + (tone || '') }, el('b', { text: v }), el('span', { text: l }), el('em', { text: s }));
 }
 
+function sizeScatter() {
+  const peers = D.universe.filter((u) => !u.pre && u.mcap_usd > 0 && u.listed_at);
+  const W = 226, H = 108, L = 27, R = 4, T = 5, B = 15;
+  const x0 = 6.6, x1 = 10.5, y0 = -3.3, y1 = 2.8;
+  const X = (x) => L + ((x - x0) / (x1 - x0)) * (W - L - R);
+  const Y = (y) => T + ((y1 - y) / (y1 - y0)) * (H - T - B);
+  const fit = (x) => (D.value.coef[0] + D.value.coef[1] * (x * Math.LN10 - Math.log(1e8))) / Math.LN10;
+  const lo = Math.log10(D.value.band_mult[0]);
+  const hi = Math.log10(D.value.band_mult[1]);
+  const xs = Array.from({ length: 41 }, (_, i) => x0 + ((x1 - x0) * i) / 40);
+  const line = (off) => xs.map((x, i) => `${i ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(fit(x) + off).toFixed(1)}`).join(' ');
+  const bandTop = xs.map((x) => `${X(x).toFixed(1)},${Y(fit(x) + hi).toFixed(1)}`).join(' ');
+  const bandBot = xs.slice().reverse().map((x) => `${X(x).toFixed(1)},${Y(fit(x) + lo).toFixed(1)}`).join(' ');
+  const grid = [-2, -1, 0, 1].map((g) => {
+    const label = g === 0 ? '1×' : g < 0 ? (g === -1 ? '0.1×' : '0.01×') : '10×';
+    return `<line x1="${L}" y1="${Y(g).toFixed(1)}" x2="${W - R}" y2="${Y(g).toFixed(1)}" stroke="#1b292a" stroke-dasharray="2 3"/><text x="2" y="${(Y(g) + 2).toFixed(1)}" fill="#4f6563" font-size="5.5">${label}</text>`;
+  }).join('');
+  const xlab = [[7, '$10M'], [8, '$100M'], [9, '$1B'], [10, '$10B']].map(([g, label]) =>
+    `<text x="${X(g).toFixed(1)}" y="${H - 4}" fill="#4f6563" font-size="5.5" text-anchor="middle">${label}</text>`
+  ).join('');
+  const dots = peers.map((u) => {
+    const x = Math.log10(u.tvl_usd);
+    const y = Math.log10(u.mcap_usd / u.tvl_usd);
+    return `<circle cx="${X(x).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="1.15" fill="#7df3c6" fill-opacity=".55"/>`;
+  }).join('');
+  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Market cap over TVL against TVL for 95 traded peers">${grid}<polygon points="${bandTop} ${bandBot}" fill="#7df3c6" fill-opacity=".08"/><path d="${line(lo)}" fill="none" stroke="#7df3c6" stroke-opacity=".28" stroke-width=".8"/><path d="${line(hi)}" fill="none" stroke="#7df3c6" stroke-opacity=".28" stroke-width=".8"/><path d="${line(0)}" fill="none" stroke="#7df3c6" stroke-width="1.2"/>${dots}${xlab}</svg>`;
+  return el('div', { class: 'scatter', title: `${peers.length} traded peers with a market cap and a listing date` },
+    el('div', { html: svg }),
+    el('span', { text: `${peers.length} traded peers · fit × P25–P75` }));
+}
+
 function hero() {
   const v = D.value;
   const o = D.odds;
@@ -160,15 +191,15 @@ function hero() {
     el('div', { class: 'hero-copy' },
       el('span', { class: 'eyebrow', text: 'THE BOARD · ' + D.meta.as_of }),
       el('h1', null, 'Every pre-token protocol, ', el('span', { text: 'priced by its peers’ record.' })),
-      el('p', null, `${D.counts.rows} protocols record no token and pass the house product screen: ${D.counts.watchlist} on the watchlist, ${D.counts.below_floor} below the floor, ${D.counts.off_list} above it but off-list with a parent recorded. Implied value = TVL × fitted launch multiple × token odds. No name is hand-picked.`)
+      el('p', null, `${D.counts.rows} protocols record no token and pass the house product screen: ${D.counts.watchlist} on the watchlist, ${D.counts.below_floor} below the floor, ${D.counts.off_list} above it but off-list with a parent recorded. Implied value = TVL × fitted launch multiple × token odds, with growth and no-token age pricing the odds. Every row carries a costed 10-step plan; ${D.counts.farm} clear the T-bill and $${MODEL.farm_min_hourly}/hour bar. No name is hand-picked.`)
     ),
     el('div', { class: 'kpis' },
-      kpi(String(D.counts.rows), 'ranked pre-token', `${D.counts.watchlist} watch · ${D.counts.below_floor} early · ${D.counts.off_list} off-list`),
-      kpi(pct0(v.band_cover), 'held-out inside P25–P75', `${pct0(v.within3)} within 3× · band ×${v.band_mult[0]}–×${v.band_mult[1]}`),
-      kpi('×' + v.loo.median.toFixed(2), 'held-out miss, median', `walk-forward ×${v.holdout.median.toFixed(2)} · flat ×${v.terms[0].loo.toFixed(2)}`),
-      kpi(pct1(o.cv.accuracy), 'token odds, 10-fold', `base ${pct1(o.base_rate)} · Brier ${o.cv.brier.toFixed(3)}`),
-      kpi(String(D.counts.farm), 'worth farming', `net beats T-bill and $${MODEL.farm_min_hourly}/h`, 'mint'),
-      kpi(`${D.counts.watchlist} / ${D.meta.watchlist_size}`, 'watchlist covered', `ledger ${D.ledger.total} of ${D.meta.protocols}`)
+      kpi(`${D.counts.watchlist} / ${D.meta.watchlist_size}`, 'watchlist covered?', `${D.counts.rows} ranked · ${D.counts.below_floor} early · ${D.counts.off_list} off-list`),
+      kpi(pct0(v.band_cover), 'is the range honest?', `${pct0(v.within3)} within 3× · nominal 50%`),
+      kpi('×' + v.loo.median.toFixed(2), 'beats a flat multiple?', `flat ×${v.terms[0].loo.toFixed(2)} LOO · walk-forward ×${v.holdout.median.toFixed(2)}`),
+      kpi(pct1(o.cv.accuracy), 'do odds beat base?', `base ${pct1(o.base_rate)} · Brier ${o.cv.brier.toFixed(3)} vs ${(o.base_rate * (1 - o.base_rate)).toFixed(3)}`),
+      kpi(String(D.counts.farm), 'worth farming now?', `of ${D.counts.rows} · every row has a 10-step plan`, 'mint'),
+      kpi(String(D.ledger.total), 'every record accounted for?', `${D.counts.rows} ranked · ${D.ledger.total - D.counts.rows} set aside`)
     )
   );
 }
@@ -200,8 +231,13 @@ function evidence() {
   return el('section', { class: 'evidence' },
     el('div', { class: 'ev-card' },
       el('h3', null, 'Value model', el('span', { text: 'leave-one-out / 5-fold walk-forward' })),
-      el('div', { class: 'ev-head' }, el('span', { text: 'term, added to a flat multiple' }), el('b', { text: 'LOO' }), el('b', { text: 'WF' }), el('em', { text: 'verdict' })),
-      v.terms.map((t) => term(t)),
+      el('div', { class: 'ev-split' },
+        el('div', { class: 'ev-terms' },
+          el('div', { class: 'ev-head' }, el('span', { text: 'term, added to a flat multiple' }), el('b', { text: 'LOO' }), el('b', { text: 'WF' }), el('em', { text: 'verdict' })),
+          v.terms.map((t) => term(t))
+        ),
+        sizeScatter()
+      ),
       el('div', { class: 'ev-foot', text: `Fit on ${v.n_train} traded peers (${v.n_fit} after a ${(v.trim * 100).toFixed(0)}% trim), ridge ${v.lambda}. ${v.terms.filter((t) => t.kept).length} of ${v.terms.length - 1} candidate terms survives both tests; growth and age price the odds. ${pct0(v.band_cover)} of held-out peers land inside the band, ${pct0(v.within3)} within 3×.` })
     ),
     el('div', { class: 'ev-card' },
@@ -214,8 +250,8 @@ function evidence() {
       el('div', { class: 'ev-foot', text: 'Size and age splines, family, growth and the two missingness flags. Fitted on all 758 records; no protocol name enters the features.' })
     ),
     el('div', { class: 'ev-card' },
-      el('h3', null, 'Farm economics', el('span', { text: 'what the drop has to beat' })),
-      el('div', { class: 'ev-big' }, el('b', { text: String(D.counts.farm) }), el('span', { text: `of ${D.counts.rows} beat the bar` })),
+      el('h3', null, 'Farm economics', el('span', { text: `${D.counts.rows} costed plans` })),
+      el('div', { class: 'ev-big' }, el('b', { text: String(D.counts.farm) }), el('span', { text: `of ${D.counts.rows} clear the bar` })),
       el('div', { class: 'ev-row' }, el('span', { text: 'Position size' }), el('b', { text: '2.5 bps' }), el('em', { text: '$1K to $20K' })),
       el('div', { class: 'ev-row' }, el('span', { text: 'Drop share' }), el('b', { text: '7%' }), el('em', { text: 'of implied × share' })),
       el('div', { class: 'ev-row' }, el('span', { text: 'Fees' }), el('b', { text: '19 tx' }), el('em', { text: '+ bridge' })),
@@ -313,7 +349,7 @@ function table(rows) {
       el('td', { class: 'num' }, age(r.age_days)),
       el('td', { class: 'num' }, oddsBar(r.odds)),
       el('td', { class: 'num' }, usd(r.launch_value_usd)),
-      el('td', { class: 'num implied' }, el('b', { text: usd(r.implied_value_usd) })),
+      el('td', { class: 'num implied' }, el('b', { text: usd(r.implied_value_usd) }), el('em', { class: 'build', title: 'fitted launch multiple × token odds', text: `${mult(r.launch_value_usd / r.tvl_usd)} · ${pct0(r.odds)}` })),
       el('td', { class: 'num' }, rangeBar(r)),
       el('td', { class: 'num' }, usd(r.farm.deposit_usd)),
       el('td', { class: 'num' }, money2(r.farm.drop_usd)),

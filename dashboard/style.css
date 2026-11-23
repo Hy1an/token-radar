@@ -108,6 +108,11 @@ em { font-style: normal; }
 .ev-card { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px 6px; min-height: 112px; }
 .ev-card h3 { margin: 0 0 3px; font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; display: flex; justify-content: space-between; gap: 8px; }
 .ev-card h3 span { font-size: 7.5px; letter-spacing: .05em; color: var(--dim); text-transform: none; }
+.ev-split { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 8px; align-items: start; }
+.ev-terms { min-width: 0; }
+.scatter { min-width: 0; }
+.scatter svg { display: block; width: 100%; height: auto; }
+.scatter span { display: block; margin-top: 1px; font-size: 6.5px; color: var(--dim); text-align: right; white-space: nowrap; }
 .ev-row { display: flex; align-items: baseline; gap: 8px; border-bottom: 1px dotted rgba(38, 56, 58, .7); padding: 2px 0; font-size: 9px; }
 .ev-row span { flex: 1; color: var(--mut); }
 .ev-row b { font: 600 9.5px var(--mono); }
@@ -185,6 +190,7 @@ table.board td.proto { white-space: normal; max-width: 250px; }
 .psub { font-size: 7.8px; color: var(--dim); margin-top: 1px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 table.board td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 9.5px; }
 table.board td.implied b { font-size: 11px; color: var(--txt); }
+table.board td.implied em.build { display: block; margin-top: 1px; font: 7px/1.1 var(--mono); color: var(--dim); font-style: normal; }
 .odds { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; font-family: var(--mono); font-size: 9px; }
 .ob { display: inline-block; width: 34px; height: 4px; background: #1a2829; border-radius: 2px; overflow: hidden; }
 .ob b { display: block; height: 100%; border-radius: 2px; }
@@ -328,6 +334,8 @@ table.m-table tr.sumrow td { border-top: 1px solid var(--line2); color: var(--tx
   .hero { grid-template-columns: 1fr; align-items: start; }
   .kpis { grid-template-columns: repeat(3, 1fr); }
   .evidence { grid-template-columns: 1fr; }
+  .ev-split { grid-template-columns: 1fr; }
+  .scatter { display: none; }
   .d-grid { grid-template-columns: 1fr; }
   .m-grid { grid-template-columns: 1fr; }
   table.board td:nth-child(10), table.board th:nth-child(10),
